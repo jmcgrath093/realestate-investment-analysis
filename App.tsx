@@ -46,7 +46,7 @@ interface Property {
   purchaseDate: DateSelection;
   loanRatio: number;
   interestRate: number;
-  loanTerm: number; // in years
+  loanTerm: number;
   annualGrowth: number;
   rentals: RentalPeriod[];
   offsets: OffsetAccount[];
@@ -327,7 +327,7 @@ export default function App() {
       id: `prop_${Date.now()}`,
       name: `Property ${properties.length + 1}`,
       purchasePrice: 500000,
-      purchaseDate: { month: 0, year: currentYear },
+      purchaseDate: { month: new Date().getMonth(), year: currentYear },
       loanRatio: 80,
       interestRate: 6.5,
       loanTerm: 30,
@@ -339,9 +339,9 @@ export default function App() {
     setProperties([...properties, newProperty]);
   };
 
-  const removeProperty = (id: string) => {
-    setProperties(properties.filter(p => p.id !== id));
-  };
+  const removeProperty = useCallback((id: string) => {
+    setProperties(prev => prev.filter(p => p.id !== id));
+  }, []);
 
   const updateProperty = useCallback(<K extends keyof Property>(id: string, key: K, value: Property[K]) => {
     setProperties(prev => prev.map(p => p.id === id ? { ...p, [key]: value } : p));
@@ -375,20 +375,21 @@ export default function App() {
     setProperties(prev => prev.map(p => {
         if (p.id === propId) {
             const id = `${arrayKey.slice(0, -1)}_${Date.now()}`;
+            const defaultStartDate = p.purchaseDate;
             if (arrayKey === 'rentals') {
-                const newItem: RentalPeriod = { id, monthlyAmount: 2000, startDate: { month: 0, year: currentYear }, endDate: { month: 11, year: currentYear + 5 } };
+                const newItem: RentalPeriod = { id, monthlyAmount: 2000, startDate: defaultStartDate, endDate: { month: defaultStartDate.month, year: defaultStartDate.year + 5 } };
                 return { ...p, rentals: [...p.rentals, newItem] };
             } else if (arrayKey === 'offsets') {
-                const newItem: OffsetAccount = { id, initialAmount: 10000, startDate: { month: 0, year: currentYear }, endDate: { month: 11, year: currentYear + 30 }, useForRepayments: true };
+                const newItem: OffsetAccount = { id, initialAmount: 10000, startDate: defaultStartDate, endDate: { month: defaultStartDate.month, year: defaultStartDate.year + 30 }, useForRepayments: true };
                 return { ...p, offsets: [...p.offsets, newItem] };
             } else { // expenses
-                const newItem: PropertyExpense = { id, description: 'Rates', amount: 500, frequency: 'quarterly', startDate: { month: 0, year: currentYear } };
+                const newItem: PropertyExpense = { id, description: 'Rates', amount: 500, frequency: 'quarterly', startDate: defaultStartDate };
                 return { ...p, expenses: [...p.expenses, newItem] };
             }
         }
         return p;
     }));
-  }, [currentYear]);
+  }, []);
 
   const removeNestedItem = useCallback((propId: string, arrayKey: keyof Property, itemId: string) => {
     setProperties(prev => prev.map(p => {
@@ -477,14 +478,17 @@ export default function App() {
                  return;
             }
 
-            monthPropertyDetails[p.id] = { principalPaid: 0, interestPaid: 0, loanBalance: pState.loanBalance, offsetBalance: 0, propertyValue: pState.propertyValue };
-
             const purchaseMonthAbsolute = p.purchaseDate.year * 12 + p.purchaseDate.month;
             const currentMonthAbsoluteSim = currentYear * 12 + currentMonth;
-            
+
             if (currentMonthAbsoluteSim < purchaseMonthAbsolute) {
-                return; // Property not yet purchased
+                // Property not yet purchased, show all values as 0 for this month
+                monthPropertyDetails[p.id] = { principalPaid: 0, interestPaid: 0, loanBalance: 0, offsetBalance: 0, propertyValue: 0 };
+                return;
             }
+
+            // Initialize with current state, calculations below will update paid amounts for the month
+            monthPropertyDetails[p.id] = { principalPaid: 0, interestPaid: 0, loanBalance: pState.loanBalance, offsetBalance: 0, propertyValue: pState.propertyValue };
 
             // --- Handle one-off purchase event ---
             if (currentMonthAbsoluteSim === purchaseMonthAbsolute) {
